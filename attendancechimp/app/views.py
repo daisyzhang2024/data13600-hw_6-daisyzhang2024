@@ -17,7 +17,8 @@ import json
 import io
 
 from .models import (InstructorProfile, StudentProfile, Course, Enrollment,
-                     Lecture, QRCodeUpload, is_instructor, is_student)
+                     Lecture, QRCodeUpload, is_instructor, is_student,
+                     getUploadsForCourse)
 
 CDT = zoneinfo.ZoneInfo("America/Chicago")
 
@@ -227,3 +228,24 @@ def dumpUploads(request):
     return JsonResponse(data, safe=False)
 
 
+# ---------------------------------------------------------------------------
+# HW6  — validated uploads
+# ---------------------------------------------------------------------------
+
+@csrf_exempt
+def getUploads(request):
+    """Return JSON list of valid uploads for a course (GET, instructor only)."""
+    if request.method != "GET":
+        return HttpResponse("Error: only GET is allowed", status=405)
+    if not request.user.is_authenticated or not is_instructor(request.user):
+        return HttpResponse("Unauthorized", status=401)
+
+    course = request.GET.get('course')
+    if not course:
+        return JsonResponse({"error": "Missing course parameter"}, status=400)
+
+    uploads = getUploadsForCourse(course)   # [] if the course doesn't exist
+    data = [{'username': u.student.username,
+             'upload_time': u.uploaded_at.astimezone(CDT).strftime("%Y-%m-%d %H:%M:%S")}
+            for u in uploads]
+    return JsonResponse(data, safe=False)

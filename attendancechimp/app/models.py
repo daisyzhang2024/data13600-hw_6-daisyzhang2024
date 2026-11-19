@@ -21,6 +21,11 @@ from django.contrib.auth.models import User
 import logging
 import string
 import random
+from datetime import timezone as dt_timezone
+from zoneinfo import ZoneInfo
+from django.utils import timezone
+
+CHICAGO = ZoneInfo("America/Chicago")
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +69,12 @@ class Course(models.Model):
     day_fri = models.BooleanField(default=False)
 
     def meets_on_day(self, weekday_int):
-        """Return True if the course meets on the given weekday (0=Mon)."""
-        return [self.day_mon, self.day_tue, self.day_wed,
-                self.day_thu, self.day_fri][weekday_int]
+        """Return True if the course meets on the given weekday (0=Mon, 6=Sun)."""
+        days = [self.day_mon, self.day_tue, self.day_wed,
+                self.day_thu, self.day_fri]
+        if weekday_int < 0 or weekday_int >= len(days):
+            return False   # weekends: course never meets
+        return days[weekday_int]
 
     def __str__(self):
         return self.name
@@ -138,4 +146,44 @@ def is_instructor(user):
 def is_student(user):
     """Return True if the user has a StudentProfile."""
     return hasattr(user, 'student_profile')
+
+def getUploadsForCourse(course):
+    """
+    Return a list of QRCodeUpload objects for the given course number
+    (e.g. "DATA13600") that were uploaded on a meeting day, between
+    start_time and end_time, in Chicago local time.
+    """
+    # 1. Does the course exist?
+    try:
+        course_obj = Course.objects.get(name=course)
+    except Course.DoesNotExist:
+        return []
+
+    # No schedule means nothing can be valid
+    if course_obj.start_time is None or course_obj.end_time is None:
+        return []
+
+    # 2. Uploads linked via Upload -> Lecture -> Course
+    uploads = (QRCodeUpload.objects
+               .filter(lecture__course=course_obj)
+               .select_related('student', 'lecture'))
+
+    valid = []
+    for upload in uploads:
+        ts = upload.uploaded_at
+        if ts is None:
+            continue
+        if timezone.is_naive(ts):            # treat naive timestamps as UTC
+            ts = timezone.make_aware(ts, dt_timezone.utc)
+        local = ts.astimezone(CHICAGO)
+
+        # 3a. Day check
+        if not course_obj.meets_on_day(local.weekday()):
+            continue
+        # 3b. Time check (inclusive)
+        if course_obj.start_time <= local.time() <= course_obj.end_time:
+            valid.append(upload)
+
+    # 4. Only the valid uploads
+    return valid
 

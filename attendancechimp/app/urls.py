@@ -20,6 +20,8 @@ urlpatterns = [
     path('createLecture/', views.createLecture, name='createLecture'),
     # HW5.4
     path('createQRCodeUpload/', views.createQRCodeUpload, name='createQRCodeUpload'),
-   # HM5.5
+    # HM5.5
     path('dumpUploads', views.dumpUploads, name='dumpUploads'),
+    # HW6
+    path('getUploads', views.getUploads, name='getUploads'),
 ]
